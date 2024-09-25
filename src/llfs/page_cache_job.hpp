@@ -281,6 +281,34 @@ class PageCacheJob : public PageLoader
         BATT_FORWARD(page_id_fn));
   }
 
+  template <typename PageIdFn>
+  StatusOr<std::unordered_map<PageId, u64, PageId::Hash>> trace_new_roots_ref_depths(PageLoader& page_loader, PageIdFn&& page_id_fn) const
+  {
+    return trace_refs_depth_recursive(
+        page_loader,
+
+        // Trace all new pages in the root set.
+        //
+        as_seq(this->new_pages_.begin(), this->new_pages_.end())  //
+            | seq::map([](const auto& kv_pair) -> PageId {
+                return kv_pair.first;
+              })  //
+            | seq::filter([this](const PageId& id) {
+                auto iter = this->root_set_delta_.find(id);
+                return iter != this->root_set_delta_.end() && iter->second > 0;
+              }),
+
+        // Recursion predicate
+        //
+        [this](PageId page_id) {
+          return this->is_page_new_and_pinned(page_id);
+        },
+
+        // Action per traced page id
+        //
+        BATT_FORWARD(page_id_fn));
+  }
+
   usize new_page_count() const
   {
     return this->new_pages_.size();

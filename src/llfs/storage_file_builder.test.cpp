@@ -211,6 +211,7 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_NoFlush)
           .device_id = llfs::None,
           .page_count = llfs::PageCount{kTestPageCount},
           .page_size_log2 = llfs::PageSizeLog2{12},
+          .eviction_config = llfs::None,
       });
 
   ASSERT_TRUE(packed_config.ok()) << BATT_INSPECT(packed_config.status());
@@ -229,6 +230,7 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
           .device_id = llfs::None,
           .page_count = llfs::PageCount{kTestPageCount},
           .page_size_log2 = llfs::PageSizeLog2{page_size_log2},
+          .eviction_config = llfs::None,
       };
       const usize kTestPageSize = usize{1} << options.page_size_log2;
 
@@ -314,6 +316,7 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
         .device_id = llfs::None,
         .page_count = llfs::PageCount{kTestPageCount},
         .page_size_log2 = llfs::PageSizeLog2{12} /* 4096 */,
+        .eviction_config = llfs::None,
     };
 
     {
@@ -425,6 +428,7 @@ TEST_F(StorageFileBuilderTest, WriteReadManyPackedConfigs)
         .device_id = llfs::None,
         .page_count = llfs::PageCount{kTestPageCount},
         .page_size_log2 = llfs::PageSizeLog2{9},
+        .eviction_config = llfs::None,
     };
 
     llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config =

@@ -81,6 +81,7 @@ TEST(StorageContextTest, GetPageCache)
                                     .device_id = llfs::None,
                                     .page_count = llfs::PageCount{32},
                                     .page_size_log2 = llfs::PageSizeLog2{12},
+                                    .eviction_config = llfs::None,
                                 },
                         },
                 });
@@ -116,6 +117,7 @@ TEST(StorageContextTest, GetPageCache)
                                     .device_id = llfs::None,
                                     .page_count = llfs::PageCount{32},
                                     .page_size_log2 = llfs::PageSizeLog2{21},
+                                    .eviction_config = llfs::None,
                                 },
                         },
                 });

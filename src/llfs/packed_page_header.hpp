@@ -48,6 +48,8 @@ struct PackedPageHeader {
                       const PageIdFactory& id_factory) const noexcept;
 
   big_u64 magic;
+  little_u64 original_slot_offset;
+  little_u64 original_ref_depth;
   PackedPageId page_id;
   PageLayoutId layout_id;
   little_u32 crc32;
@@ -57,7 +59,7 @@ struct PackedPageHeader {
   little_u32 size;
 };
 
-BATT_STATIC_ASSERT_EQ(sizeof(PackedPageHeader), 64);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedPageHeader), 80);
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //

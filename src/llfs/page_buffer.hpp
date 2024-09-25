@@ -68,6 +68,23 @@ class PageBuffer
   //
   void set_page_id(PageId id);
 
+  // Returns the slot offset at which this page was inserted at.
+  //
+  u64 original_slot_offset();
+
+  // Sets the original slot offset of this page.
+  //
+  void set_original_slot_offset(u64 slot_offset);
+
+  // Returns the original reference depth of this page. This is the
+  // minimum depth of the page from the root set.
+  //
+  u64 original_ref_depth();
+
+  // Sets the original reference depth of this page.
+  //
+  void set_original_ref_depth(u64 ref_depth);
+
   // Returns a ConstBuffer for the entire page buffer.
   //
   ConstBuffer const_buffer() const;

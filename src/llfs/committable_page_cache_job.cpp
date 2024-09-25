@@ -219,6 +219,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
 
   // Write new pages.
   //
+  this->slot_offset = params.caller_slot;
   Status write_status = LLFS_COLLECT_LATENCY(job->cache().metrics().page_write_latency,  //
                                              this->write_new_pages());
   BATT_REQUIRE_OK(write_status);
@@ -374,9 +375,13 @@ Status CommittablePageCacheJob::WriteNewPagesContext::start()
       const usize page_size = page_header.size;
       const usize used_size = page_header.used_size();
 
+      // Set the original slot offset value in the header
+      //
+      new_page.buffer()->set_original_slot_offset(this->that->slot_offset);
+
       this->ops[i].page_id = page_id;
 
-      this->job->cache().arena_for_page_id(page_id).device().write(new_page.const_buffer(),
+      this->job->cache().arena_for_page_id(page_id).device().write(new_page.buffer(),
                                                                    this->ops[i].get_handler());
 
       this->total_byte_count += page_size;
@@ -502,12 +507,24 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
   // Trace any new pages reachable from the root set and increment their ref count; existing pages
   // are already accounted for existing ref counts (because pages are write-once).
   //
-  Status trace_add_ref_status = this->job_->trace_new_roots(loader, [&ref_count_delta](PageId id) {
+  /*Status trace_add_ref_status = this->job_->trace_new_roots(loader, [&ref_count_delta](PageId id) {
+    if (id) {
+      ref_count_delta[id] += 1;
+    }
+  });
+  BATT_REQUIRE_OK(trace_add_ref_status);*/
+  StatusOr<std::unordered_map<PageId, u64, PageId::Hash>> trace_add_ref_status = this->job_->trace_new_roots_ref_depths(loader, [&ref_count_delta](PageId id) {
     if (id) {
       ref_count_delta[id] += 1;
     }
   });
   BATT_REQUIRE_OK(trace_add_ref_status);
+
+  for (auto& p : this->job_->get_new_pages()) {
+    auto ref_depth = (*trace_add_ref_status).find(p.first);
+    BATT_CHECK_NE(ref_depth, (*trace_add_ref_status).end());
+    p.second.buffer()->set_original_ref_depth((*ref_depth).second);
+  }
 
   // Trace deleted pages non-recursively, decrementing the ref counts of all pages they directly
   // reference.

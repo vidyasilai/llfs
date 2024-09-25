@@ -212,6 +212,7 @@ class CommittablePageCacheJob
   boost::intrusive_ptr<FinalizedJobTracker> tracker_;
   PageRefCountUpdates ref_count_updates_;
   std::unique_ptr<WriteNewPagesContext> write_new_pages_context_;
+  slot_offset_type slot_offset;
 };
 
 /** \brief Write all changes in `job` to durable storage.  This is guaranteed to be atomic.

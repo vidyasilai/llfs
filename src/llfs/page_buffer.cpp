@@ -76,6 +76,34 @@ void PageBuffer::set_page_id(PageId id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+u64 PageBuffer::original_slot_offset()
+{
+  return get_page_header(*this).original_slot_offset;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageBuffer::set_original_slot_offset(u64 slot_offset)
+{
+  mutable_page_header(this)->original_slot_offset = slot_offset;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 PageBuffer::original_ref_depth()
+{
+  return get_page_header(*this).original_ref_depth;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageBuffer::set_original_ref_depth(u64 ref_depth)
+{
+  mutable_page_header(this)->original_ref_depth = ref_depth;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*static*/ usize PageBuffer::max_payload_size(PageSize size)
 {
   return size - sizeof(PackedPageHeader);

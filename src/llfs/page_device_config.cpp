@@ -52,6 +52,17 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   p_config->page_size_log2 = options.page_size_log2;
   p_config->uuid = options.uuid.value_or(boost::uuids::random_generator{}());
 
+  if (options.eviction_config) {
+    const EvictionConfig ev = *(options.eviction_config);
+    p_config->eviction_priorities_[ev.slot_offset.priority] = EvictionFactors::SLOT_OFFSET;
+    p_config->eviction_priorities_[ev.ref_depth.priority] = EvictionFactors::REF_DEPTH;
+    p_config->eviction_priorities_[ev.lru.priority] = EvictionFactors::LRU;
+
+    p_config->eviction_thresholds_[EvictionFactors::SLOT_OFFSET] = ev.slot_offset.threshold_percent;
+    p_config->eviction_thresholds_[EvictionFactors::REF_DEPTH] = ev.ref_depth.threshold_percent;
+    p_config->eviction_thresholds_[EvictionFactors::LRU] = ev.lru.threshold_percent;
+  }
+
   txn.require_pre_flush_action([pages_offset, page_size = page_size,
                                 page_count = options.page_count](RawBlockFile& file) -> Status {
     LLFS_DVLOG(1) << "truncating to " << BATT_INSPECT(pages_offset.upper_bound)

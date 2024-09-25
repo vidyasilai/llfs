@@ -49,6 +49,33 @@ StatusOr<std::unique_ptr<PageDevice>> recover_storage_object(
 #endif  // LLFS_DISABLE_IO_URING
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// These types provide a way to structure the configuration for an eviction heuristic
+// based on a set of "factors" captured here in LLFS. An application can optionally
+// provide this config, otherwise LLFS will default to using LRU. This way, the application
+// can control which factors are used in determining a PageCacheSlot to evict and their priorities.
+//
+
+enum EvictionFactors : u8 {
+  SLOT_OFFSET = 0,
+  REF_DEPTH = 1,
+  LRU = 2,
+  MAX_FACTOR,
+};
+
+struct EvictionFactorConfig {
+  u8 priority;
+  u8 threshold_percent;
+};
+
+struct EvictionConfig {
+  EvictionFactorConfig slot_offset;
+  EvictionFactorConfig ref_depth;
+  EvictionFactorConfig lru;
+};
+
+BATT_STATIC_ASSERT_EQ(sizeof(EvictionConfig), 6);
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 struct PageDeviceConfigOptions {
   using PackedConfigType = PackedPageDeviceConfig;
@@ -69,6 +96,10 @@ struct PageDeviceConfigOptions {
   // log2(the page size of the device)
   //
   PageSizeLog2 page_size_log2;
+
+  // This device's eviction heuristic configuration. If None, defaults to LRU.
+  //
+  Optional<EvictionConfig> eviction_config;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -179,9 +210,21 @@ struct PackedPageDeviceConfig : PackedConfigSlotHeader {
   //
   little_u16 page_size_log2;
 
+  // An array for the priorities of each eviction factor for this device.
+  // The index in the array denotes the priority (i.e., index 0 is the highest priority)
+  // and the value contained at that index maps to the factor enum value.
+  //
+  little_u8 eviction_priorities_[3];
+
+  // An array containing the eviction factor thresholds. The index maps
+  // to a factor enum value, and the value contained at that index can take
+  // on a value between [0, 100] to represent the threshold percent.
+  //
+  little_u8 eviction_thresholds_[3];
+
   // Reserved for future use.
   //
-  little_u8 reserved_[18];
+  little_u8 reserved_[12];
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

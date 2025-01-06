@@ -11,6 +11,7 @@
 #define LLFS_BLOOM_FILTER_HPP
 
 #include <llfs/data_layout.hpp>
+#include <llfs/packed_page_id.hpp>
 #include <llfs/seq.hpp>
 
 #include <batteries/async/slice_work.hpp>
@@ -133,6 +134,10 @@ inline double optimal_bloom_filter_bit_rate(double target_false_positive_P)
 }
 
 struct PackedBloomFilter {
+  // The id of the page this filter was build for.
+  //
+  PackedPageId page_id;
+
   // The size of the filter in 64-bit words, minus 1.  The word_count (== word_count_mask + 1) MUST
   // be a power of 2.
   //
@@ -170,22 +175,25 @@ struct PackedBloomFilter {
     return std::max<u64>(1, usize(bit_rate * ln2 - 0.5));
   }
 
-  static PackedBloomFilter from_params(const BloomFilterParams& params, usize item_count)
+  static PackedBloomFilter from_params(const BloomFilterParams& params, usize item_count,
+                                       PageId page_id = PageId{kInvalidPageId})
   {
     PackedBloomFilter filter;
-    filter.initialize(params, item_count);
+    filter.initialize(params, item_count, page_id);
     return filter;
   }
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  void initialize(const BloomFilterParams& params, usize item_count)
+  void initialize(const BloomFilterParams& params, usize item_count, PageId page_id)
   {
     const usize num_words = word_count_from_bit_count(params.bits_per_item * item_count);
     const usize filter_bit_count = num_words * 64;
 
     this->word_count_mask = num_words - 1;
     this->hash_count = optimal_hash_count(filter_bit_count, item_count);
+
+    this->page_id = PackedPageId::from(page_id);
   }
 
   u64 index_from_hash(u64 hash_val) const
@@ -234,7 +242,7 @@ struct PackedBloomFilter {
   }
 };
 
-BATT_STATIC_ASSERT_EQ(sizeof(PackedBloomFilter), 24);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBloomFilter), 32);
 
 inline usize packed_sizeof(const PackedBloomFilter& filter)
 {
@@ -324,6 +332,14 @@ void parallel_build_bloom_filter(batt::WorkerPool& worker_pool, Iter first, Iter
                              }))
         << "work_context must not be closed!";
   }
+}
+
+inline Status validate_packed_value(const PackedBloomFilter& packed, const void* buffer_data,
+                                    usize buffer_size)
+{
+  BATT_REQUIRE_OK(validate_packed_struct(packed, buffer_data, buffer_size));
+
+  return batt::OkStatus();
 }
 
 }  // namespace llfs

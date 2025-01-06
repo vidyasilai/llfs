@@ -42,6 +42,8 @@
 #include <batteries/async/latch.hpp>
 #include <batteries/async/mutex.hpp>
 
+#include <boost/lockfree/queue.hpp>
+
 #include <functional>
 #include <iomanip>
 #include <memory>
@@ -182,6 +184,11 @@ class PageCache : public PageLoader
 
   const PageArena& arena_for_device_id(page_device_id_int device_id_val) const;
 
+  void push_to_page_filter_queue(PageId page_id)
+  {
+    BATT_CHECK(this->page_filter_queue_.push(page_id));
+  }
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // PageLoader interface
   //
@@ -294,6 +301,17 @@ class PageCache : public PageLoader
                                  const Optional<PageLayoutId>& required_layout,
                                  OkIfNotFound ok_if_not_found);
 
+  //----- --- -- -  -  -   -
+  batt::TaskScheduler& get_task_scheduler(const PageCacheOptions& runtime_options)
+  {
+    if (!runtime_options.scheduler) {
+      return batt::Runtime::instance().default_scheduler();
+    }
+    return *runtime_options.scheduler;
+  }
+
+  void page_filter_task_main();
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // The configuration passed in at creation time.
@@ -327,6 +345,12 @@ class PageCache : public PageLoader
   // with the PageCache so that we trace references during page recycling (aka garbage collection).
   //
   std::shared_ptr<batt::Mutex<PageLayoutReaderMap>> page_readers_;
+
+  boost::lockfree::queue<PageId> page_filter_queue_{64};
+
+  batt::Task page_filter_task_;
+
+  batt::Watch<bool> stop_requested_{false};
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // TODO [tastolfi 2021-09-08] We need something akin to the PageRecycler/PageAllocator to durably

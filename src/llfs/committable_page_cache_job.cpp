@@ -373,6 +373,11 @@ Status CommittablePageCacheJob::WriteNewPagesContext::start()
 
       this->ops[i].page_id = page_id;
 
+      // Add new page to the page filter queue so that its corresponding bloom filter can be built
+      // asynchronously.
+      //
+      this->job->cache().push_to_page_filter_queue(page_id);
+
       this->job->cache().arena_for_page_id(page_id).device().write(new_page.const_buffer(),
                                                                    this->ops[i].get_handler());
 

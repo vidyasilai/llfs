@@ -101,6 +101,11 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
     : options_{options}
     , metrics_{}
     , page_readers_{std::make_shared<batt::Mutex<PageLayoutReaderMap>>()}
+    , page_filter_task_{this->get_task_scheduler(options).schedule_task(),
+                        [this] {
+                          this->page_filter_task_main();
+                        },
+                        "[PageCache::page_filter_task]"}
 {
   this->cache_slot_pool_by_page_size_log2_.fill(nullptr);
 
@@ -162,6 +167,8 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
                      std::distance(this->page_devices_by_page_size_.begin(), iter_pair.first),
                  as_range(iter_pair).size());
   }
+
+  // TODO [vsilai 2024-12-27] add warning logging if options.scheduler is nullptr/not set?
 
   // Register metrics.
   //
@@ -269,6 +276,9 @@ void PageCache::join()
       entry->arena.join();
     }
   }
+
+  this->stop_requested_.set_value(true);
+  this->page_filter_task_.join();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -686,9 +696,69 @@ void PageCache::async_load_page_into_slot(const PageCacheSlot::PinnedRef& pinned
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-bool PageCache::page_might_contain_key(PageId /*page_id*/, const KeyView& /*key*/) const
+bool PageCache::page_might_contain_key(PageId page_id, const KeyView& key) const
 {
-  return true;
+  const page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
+  BATT_CHECK_LT(device_id, this->page_devices_.size());
+
+  std::shared_ptr<PageBuffer> filter_page_buffer =
+      this->page_devices_[device_id]->page_filters.get_bloom_filter_page_buffer(page_id);
+  BATT_CHECK(filter_page_buffer);
+
+  StatusOr<const PackedBloomFilter&> packed_ref =
+      unpack_cast(filter_page_buffer->const_payload(), batt::StaticType<PackedBloomFilter>{});
+  BATT_CHECK(packed_ref.ok()) << BATT_INSPECT(packed_ref.status());
+
+  BATT_CHECK_EQ(packed_ref->page_id.unpack(), page_id);
+
+  return packed_ref->might_contain(key);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageCache::page_filter_task_main()
+{
+  for (;;) {
+    if (this->stop_requested_.get_value()) {
+      break;
+    }
+
+    if (this->page_filter_queue_.empty()) {
+      batt::Task::sleep(boost::posix_time::milliseconds(1));
+      continue;
+    }
+
+    this->page_filter_queue_.consume_all([this](PageId page_id) {
+      batt::StatusOr<PinnedPage> pinned_page = this->get_page(page_id, OkIfNotFound{false});
+      BATT_CHECK(pinned_page.ok()) << BATT_INSPECT(pinned_page.status());
+
+      std::vector<KeyView> all_keys;
+      StableStringStore strings;
+      usize start_index = 0;
+      for (;;) {
+        std::vector<KeyView> key_buffer_out{1024};
+        batt::StatusOr<usize> returned_keys =
+            (*pinned_page)
+                ->get_keys(ItemOffset{start_index}, batt::as_slice(key_buffer_out), strings);
+        if (returned_keys.status() == batt::StatusCode::kUnimplemented) {
+          return;
+        }
+        BATT_CHECK(returned_keys.ok()) << BATT_INSPECT(returned_keys.status());
+
+        if (*returned_keys == 0) {
+          break;
+        }
+        all_keys.insert(all_keys.end(), std::make_move_iterator(key_buffer_out.begin()),
+                        std::make_move_iterator(key_buffer_out.begin() + *returned_keys));
+        start_index += *returned_keys;
+      }
+
+      const page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
+      BATT_CHECK_LT(device_id, this->page_devices_.size());
+
+      this->page_devices_[device_id]->page_filters.create_filter_page(page_id, all_keys);
+    });
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -421,7 +421,10 @@ const batt::SharedPtr<PageCache>& StorageSimulation::init_cache() noexcept
                 return this->get_log_device(arena.allocator_log_device_name);
               }))});
     }
-    this->cache_ = BATT_OK_RESULT_OR_PANIC(PageCache::make_shared(std::move(arenas)));
+
+    PageCacheOptions cache_opts =
+        PageCacheOptions::with_default_values().set_task_scheduler(&this->task_scheduler());
+    this->cache_ = BATT_OK_RESULT_OR_PANIC(PageCache::make_shared(std::move(arenas), cache_opts));
 
     // Register all page layouts for this simulation.
     //

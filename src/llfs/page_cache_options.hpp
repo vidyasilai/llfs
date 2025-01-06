@@ -15,6 +15,7 @@
 #include <llfs/int_types.hpp>
 #include <llfs/page_size.hpp>
 
+#include <batteries/async/task_scheduler.hpp>
 #include <batteries/assert.hpp>
 #include <batteries/math.hpp>
 
@@ -41,7 +42,15 @@ class PageCacheOptions
     return *this;
   }
 
+  PageCacheOptions& set_task_scheduler(batt::TaskScheduler* task_scheduler)
+  {
+    this->scheduler = task_scheduler;
+    return *this;
+  }
+
   std::array<usize, kMaxPageSizeLog2> max_cached_pages_per_size_log2;
+
+  batt::TaskScheduler* scheduler;
 
  private:
   u64 default_log_size_;

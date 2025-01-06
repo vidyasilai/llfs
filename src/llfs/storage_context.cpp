@@ -173,6 +173,7 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
     }
   }
 
+  this->page_cache_options_.set_task_scheduler(&this->scheduler_);
   StatusOr<batt::SharedPtr<PageCache>> page_cache =
       PageCache::make_shared(std::move(storage_pool), this->page_cache_options_);
 

@@ -82,7 +82,7 @@ template <typename GetKeyItems>
   std::unique_ptr<u64[]> memory{new u64[word_size]};
   auto filter = reinterpret_cast<PackedBloomFilter*>(memory.get());
 
-  filter->initialize(params, items.size());
+  filter->initialize(params, items.size(), page_id);
 
   parallel_build_bloom_filter(batt::WorkerPool::default_pool(), std::begin(items), std::end(items),
                               /*hash_fn=*/BATT_OVERLOADS_OF(get_key), filter);

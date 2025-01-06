@@ -10,8 +10,16 @@
 //
 #include <llfs/bloom_filter.hpp>
 
+#include <llfs/memory_log_device.hpp>
+#include <llfs/memory_page_cache.hpp>
 #include <llfs/metrics.hpp>
+#include <llfs/page_cache_job.hpp>
+#include <llfs/page_reader.hpp>
+#include <llfs/page_view.hpp>
 #include <llfs/slice.hpp>
+#include <llfs/volume.hpp>
+
+#include <llfs/testing/fake_log_device.hpp>
 
 #include <random>
 #include <sstream>
@@ -30,6 +38,7 @@ using llfs::PackedBloomFilter;
 using llfs::parallel_build_bloom_filter;
 
 using namespace llfs::int_types;
+using namespace llfs::constants;
 
 using batt::WorkerPool;
 
@@ -177,6 +186,185 @@ TEST(BloomFilterTest, RandomItems)
 
   LLFS_LOG_INFO() << "normalized query latency (per key*bit) == " << query_latency
                   << " query rate (key*bits/sec) == " << query_latency.rate_per_second();
+}
+
+class MockPageView : public llfs::PageView
+{
+ public:
+  MockPageView(std::shared_ptr<const llfs::PageBuffer>&& buffer) : llfs::PageView{std::move(buffer)}
+  {
+    this->create_keys_for_page(4096);
+  }
+
+  llfs::PageLayoutId get_page_layout_id() const override
+  {
+    return MockPageView::page_layout_id();
+  }
+
+  batt::BoxedSeq<llfs::PageId> trace_refs() const override
+  {
+    return batt::seq::Empty<llfs::PageId>{} | batt::seq::boxed();
+  }
+
+  batt::Optional<llfs::KeyView> min_key() const override
+  {
+    return this->keys_in_this_page_.front();
+  }
+
+  batt::Optional<llfs::KeyView> max_key() const override
+  {
+    return this->keys_in_this_page_.back();
+  }
+
+  batt::StatusOr<usize> get_keys(llfs::ItemOffset lower_bound,
+                                 const batt::Slice<llfs::KeyView>& key_buffer_out,
+                                 [[maybe_unused]] llfs::StableStringStore& storage) const override
+  {
+    if (lower_bound >= this->keys_in_this_page_.size()) {
+      return 0;
+    }
+
+    usize end_index =
+        std::min(lower_bound + key_buffer_out.size(), this->keys_in_this_page_.size());
+    BATT_CHECK_LE(lower_bound, end_index);
+    auto key_buffer_iterator = key_buffer_out.begin();
+    for (usize i = lower_bound; i < end_index; ++i) {
+      *key_buffer_iterator = this->keys_in_this_page_[i];
+      ++key_buffer_iterator;
+    }
+    return std::distance(key_buffer_out.begin(), key_buffer_iterator);
+  }
+
+  std::shared_ptr<llfs::PageFilter> build_filter() const override
+  {
+    return std::make_shared<llfs::NullPageFilter>(this->page_id());
+  }
+
+  void dump_to_ostream(std::ostream& out) const override
+  {
+    out << "(?)";
+  }
+
+  static const llfs::PageLayoutId& page_layout_id() noexcept
+  {
+    const static llfs::PageLayoutId id_ = [] {
+      llfs::PageLayoutId id;
+
+      const char tag[sizeof(id.value) + 1] = "(mock)";
+
+      std::memcpy(&id.value, tag, sizeof(id.value));
+
+      return id;
+    }();
+
+    return id_;
+  }
+
+  static llfs::PageReader page_reader() noexcept
+  {
+    return [](std::shared_ptr<const llfs::PageBuffer> page_buffer)
+               -> batt::StatusOr<std::shared_ptr<const llfs::PageView>> {
+      return {std::make_shared<MockPageView>(std::move(page_buffer))};
+    };
+  }
+
+  void create_keys_for_page(usize num_keys)
+  {
+    for (usize i = 0; i < num_keys; ++i) {
+      std::default_random_engine rng{i};
+      this->keys_in_this_page_.emplace_back(make_random_word(rng));
+    }
+    std::sort(this->keys_in_this_page_.begin(), this->keys_in_this_page_.end());
+  }
+
+  std::vector<std::string>& keys_in_this_page()
+  {
+    return this->keys_in_this_page_;
+  }
+
+ private:
+  std::vector<std::string> keys_in_this_page_;
+};
+
+class BuildBloomFilterTest : public ::testing::Test
+{
+ public:
+  void SetUp() override
+  {
+    this->reset_cache();
+  }
+
+  void TearDown() override
+  {
+  }
+
+  void reset_cache()
+  {
+    batt::StatusOr<batt::SharedPtr<llfs::PageCache>> page_cache_created =
+        llfs::make_memory_page_cache(
+            batt::Runtime::instance().default_scheduler(),
+            /*arena_sizes=*/
+            {
+                {llfs::PageCount{this->page_device_capacity}, llfs::PageSize{this->page_size}},
+            },
+            llfs::MaxRefsPerPage{0});
+
+    ASSERT_TRUE(page_cache_created.ok());
+
+    this->page_cache = std::move(*page_cache_created);
+
+    batt::Status register_reader_status = this->page_cache->register_page_reader(
+        MockPageView::page_layout_id(), __FILE__, __LINE__, MockPageView::page_reader());
+    ASSERT_TRUE(register_reader_status.ok());
+  }
+
+  batt::StatusOr<llfs::PinnedPage> make_mock_page(llfs::PageCacheJob& job)
+  {
+    llfs::StatusOr<std::shared_ptr<llfs::PageBuffer>> page_allocated = job.new_page(
+        llfs::PageSize{this->page_size}, batt::WaitForResource::kFalse,
+        MockPageView::page_layout_id(), llfs::Caller::Unknown, /*cancel_token=*/llfs::None);
+    BATT_REQUIRE_OK(page_allocated);
+
+    std::shared_ptr<MockPageView> mock_page_view =
+        std::make_shared<MockPageView>(std::move(*page_allocated));
+
+    this->page_to_keys[mock_page_view->page_id()] = mock_page_view->keys_in_this_page();
+
+    return job.pin_new(std::move(mock_page_view), llfs::Caller::Unknown);
+  }
+
+  batt::Status create_mock_pages_and_commit(u64 num_pages, llfs::PageCacheJob& job)
+  {
+    for (u64 i = 0; i < num_pages; ++i) {
+      batt::StatusOr<llfs::PinnedPage> pinned_page = this->make_mock_page(job);
+      BATT_REQUIRE_OK(pinned_page);
+      this->page_cache->push_to_page_filter_queue(pinned_page->page_id());
+    }
+
+    return batt::OkStatus();
+  }
+
+  const u32 page_size{2 * kMiB};
+
+  const u64 page_device_capacity{16};
+
+  std::unordered_map<llfs::PageId, std::vector<std::string>, llfs::PageId::Hash> page_to_keys;
+
+  batt::SharedPtr<llfs::PageCache> page_cache;
+};
+
+TEST_F(BuildBloomFilterTest, BuildFilters)
+{
+  std::unique_ptr<llfs::PageCacheJob> job = this->page_cache->new_job();
+  batt::Status create_pages_status =
+      this->create_mock_pages_and_commit(this->page_device_capacity, *job);
+  ASSERT_TRUE(create_pages_status.ok());
+
+  for (auto& [page_id, key_set] : this->page_to_keys) {
+    for (auto& key : key_set) {
+      EXPECT_TRUE(this->page_cache->page_might_contain_key(page_id, key));
+    }
+  }
 }
 
 }  // namespace

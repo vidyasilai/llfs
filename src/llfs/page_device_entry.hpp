@@ -10,9 +10,13 @@
 #ifndef LLFS_PAGE_DEVICE_ENTRY_HPP
 #define LLFS_PAGE_DEVICE_ENTRY_HPP
 
+#include <llfs/bloom_filter_page.hpp>
 #include <llfs/no_outgoing_refs_cache.hpp>
 #include <llfs/page_arena.hpp>
 #include <llfs/page_device_cache.hpp>
+
+#include <memory>
+#include <vector>
 
 namespace llfs {
 
@@ -24,6 +28,7 @@ struct PageDeviceEntry {
       : arena{std::move(arena)}
       , cache{this->arena.device().page_ids(), std::move(slot_pool)}
       , no_outgoing_refs_cache{this->arena.device().page_ids()}
+      , page_filters{this->arena.device().page_size(), this->arena.device().page_ids()}
   {
   }
 
@@ -40,6 +45,8 @@ struct PageDeviceEntry {
    * device.
    */
   NoOutgoingRefsCache no_outgoing_refs_cache;
+
+  BloomFilterPages page_filters;
 };
 }  // namespace llfs
 

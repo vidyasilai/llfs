@@ -36,7 +36,8 @@ batt::SharedPtr<PageCache> make_memory_page_cache(
     device_id += 1;
     cache_options.set_max_cached_pages_per_size(size, count);
   }
-
+  cache_options.set_task_scheduler(&scheduler);
+  
   return BATT_OK_RESULT_OR_PANIC(PageCache::make_shared(
       /*storage_pool=*/std::move(arenas),
       /*options=*/cache_options));

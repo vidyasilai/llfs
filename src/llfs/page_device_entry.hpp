@@ -46,6 +46,9 @@ struct PageDeviceEntry {
    */
   NoOutgoingRefsCache no_outgoing_refs_cache;
 
+  /** \brief A per-device container of all the bloom filter pages that correspond to the data pages
+   * in this device.
+   */
   BloomFilterPages page_filters;
 };
 }  // namespace llfs

@@ -58,6 +58,10 @@ std::shared_ptr<PageBuffer> BloomFilterPages::get_bloom_filter_page_buffer(PageI
   BATT_CHECK_LT((usize)physical_page_id, this->pages_.size());
 
   page_generation_int generation = this->page_ids_.get_generation(page_id);
+
+  // Block until the bloom filter page for the given generation has been created.
+  // TODO [vsilai 2025-01-06] is blocking the move here...?
+  //
   batt::Status await_generation_status =
       this->pages_[physical_page_id].generation.await_equal(generation);
   BATT_CHECK_OK(await_generation_status);

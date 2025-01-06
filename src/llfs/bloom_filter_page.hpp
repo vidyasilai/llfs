@@ -18,11 +18,25 @@
 
 namespace llfs {
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief Data associated with a bloom filter page.
+ */
 struct BloomFilterPageEntry {
+  /** \brief The page buffer that stores the bloom filter.
+   */
   std::shared_ptr<PageBuffer> buffer;
+
+  /** \brief The generation of the data page that this bloom filter page corresponds to. The
+   * batt::Watch helps with synchronization between the batt::Task that creates the filter pages,
+   * and other Tasks trying to query into the filter.
+   */
   batt::Watch<u64> generation{0};
 };
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief A container of all the bloom filter pages for a PageDevice of data pages. This class
+ * provides the interface to create and use the bloom filters.
+ */
 class BloomFilterPages
 {
  public:
@@ -41,12 +55,22 @@ class BloomFilterPages
   std::shared_ptr<PageBuffer> get_bloom_filter_page_buffer(PageId page_id);
 
  private:
+  /** \brief The size of the data page for the corresponding PageDevice.
+   */
   const PageSize data_page_size_;
 
+  /** \brief The size of the filter page for the corresponding data page.
+   */
   const PageSize filter_page_size_;
 
+  /** \brief A PageIdFactory object to help resolve physical page and generation values from a
+   * PageId object.
+   */
   const PageIdFactory page_ids_;
 
+  /** \brief The collection of all bloom filter pages, indexed by the physical page id of the
+   * corresponding data page.
+   */
   std::vector<BloomFilterPageEntry> pages_;
 };
 

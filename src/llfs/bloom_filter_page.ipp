@@ -42,10 +42,14 @@ inline void BloomFilterPages::create_filter_page(PageId page_id, const GetKeyIte
   parallel_build_bloom_filter(batt::WorkerPool::default_pool(), std::begin(items), std::end(items),
                               /*hash_fn=*/BATT_OVERLOADS_OF(get_key), filter);
 
+  // Store the buffer in the pages_ vector.
+  //
   i64 physical_page_id = this->page_ids_.get_physical_page(page_id);
   BATT_CHECK_LT((usize)physical_page_id, this->pages_.size());
   this->pages_[physical_page_id].buffer = buffer;
 
+  // Update the value of the generation of this page.
+  //
   page_generation_int generation = this->page_ids_.get_generation(page_id);
   this->pages_[physical_page_id].generation.set_value(generation);
 }

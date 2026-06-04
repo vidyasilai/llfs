@@ -369,11 +369,16 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 Volume::~Volume() noexcept
-{
-  this->pre_halt();
-  this->root_log_->flush().IgnoreError();
-  this->halt();
-  this->join();
+{                                                                                                                    
+  LOG(INFO) << "~Volume: pre_halt...";
+  this->pre_halt();                                                                                                  
+  LOG(INFO) << "~Volume: flush...";                                                                                  
+  this->root_log_->flush().IgnoreError();                                                                            
+  LOG(INFO) << "~Volume: halt...";                                                                                   
+  this->halt();                                                                                                      
+  LOG(INFO) << "~Volume: join...";                                                                                   
+  this->join();                                                                                                      
+  LOG(INFO) << "~Volume: done";                                                                                      
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

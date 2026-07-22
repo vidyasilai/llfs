@@ -10,6 +10,8 @@ from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.scm import Version
 
+from cor_recipe_utils_version import COR_RECIPE_UTILS_VERSION
+
 
 class LlfsConan(ConanFile):
     name = "llfs"
@@ -26,18 +28,25 @@ class LlfsConan(ConanFile):
 
     description = "Low-Level File System Utilities (C++)"
 
+    python_requires = f"cor_recipe_utils/{COR_RECIPE_UTILS_VERSION}"
+    python_requires_extend = "cor_recipe_utils.ConanFileBase"
+
     settings = "os", "compiler", "build_type", "arch"
 
     options = {
         "shared": [True, False],
+        "package_tests": [False, True],
     }
 
     default_options = {
         "shared": False,
+        "package_tests": True,
     }
 
-    python_requires = "cor_recipe_utils/0.19.1"
-    python_requires_extend = "cor_recipe_utils.ConanFileBase"
+    options_description = {
+        "shared": "Whether to build as shared library (or static)",
+        "package_tests": "Include test binaries in the exported package",
+    }
 
     tool_requires = [
         "cmake/[>=3.20.0 <4]",
@@ -45,6 +54,11 @@ class LlfsConan(ConanFile):
     ]
 
     build_policy = "missing"
+
+    exports = [
+        "cor.yml",
+        "cor_recipe_utils_version.*",
+    ]
 
     exports_sources = [
         "CMakeLists.txt",
@@ -60,7 +74,7 @@ class LlfsConan(ConanFile):
         "ninja/[>=1.12.1 <2]",
     ]
 
-    _is_header_only = (platform.system() != "Linux")
+    _is_header_only = False
 
     package_id_embed_mode = "full_mode"
     package_id_non_embed_mode = "full_mode"
@@ -90,7 +104,7 @@ class LlfsConan(ConanFile):
         self.requires("zlib/[>=1.3.1 <2]")
 
         self.test_requires("gtest/[>=1.16.0 <2]")
-        
+
         if platform.system() == "Linux":
             self.requires("liburing/[>=2.11 <3]", **VISIBLE)
             self.requires("libfuse/[>=3.16.2 <4]", **VISIBLE)
@@ -99,7 +113,7 @@ class LlfsConan(ConanFile):
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
     def set_version(self):
-        return self.cor.set_version_from_git_tags(self)
+        self.cor.set_version_from_git_tags(self)
 
     def layout(self):
         self.cor.layout_cmake_unified_src(self)
@@ -108,24 +122,32 @@ class LlfsConan(ConanFile):
             self.cpp.build.libs += ['llfs']
 
     def generate(self):
-        return self.cor.generate_cmake_default(self)
+        self.cor.generate_cmake_default(self)
 
     def build(self):
-        return self.cor.build_cmake_default(self)
+        self.cor.build_cmake_default(self)
 
     def package(self):
-        return self.cor.package_cmake_install(self)
+        self.cor.package_cmake_install(self)
+
+        if self.options.package_tests:
+            src_build = self.build_folder
+            dst_bin = os.path.join(self.package_folder, "bin")
+            exe_ext = '.exe' if platform.system().lower() == 'windows' else ''
+            for pattern in [f'*_Test{exe_ext}', f'*_Benchmark{exe_ext}']:
+                copy(self, pattern, src=src_build, dst=dst_bin, keep_path=False)
+
 
     def package_info(self):
-        return self.cor.package_info_lib_default(self)
+        self.cor.package_info_lib_default(self)
 
     def package_id(self):
-        return self.cor.package_id_lib_default(self)
+        self.cor.package_id_lib_default(self)
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
     def validate_build(self):
-        if self.settings.compiler == "gcc":
+        if self.settings.compiler == "gcc" and platform.system().lower() == "linux":
             out_capture = io.StringIO()
             from_conf = self.conf.get('tools.build:compiler_executables')
             cc_name = (
@@ -145,5 +167,3 @@ class LlfsConan(ConanFile):
                                                 f", expected={profile_compiler_version}")
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -
-
-

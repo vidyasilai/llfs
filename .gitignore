@@ -10,3 +10,4 @@ src/CMakeUserPresets.json
 __pycache__/
 compile_commands.json
 .cache/
+cor_recipe_utils_version.yml

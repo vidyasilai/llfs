@@ -9,6 +9,7 @@ import io, os, platform, shlex, subprocess, sys
 from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.scm import Version
+from conan.tools.files import copy
 
 from cor_recipe_utils_version import COR_RECIPE_UTILS_VERSION
 
